@@ -3,7 +3,7 @@ proftpd-mod_sftp_openssh
 
 Status
 ------
-[![GitHub Actions CI Status](https://github.com/Castaglia/proftpd-mod_sftp_openssh/actions/workflows/ci.yml/badge.svg?branch=maing)](https://github.com/Castaglia/proftpd-mod_sftp_openssh/actions/workflows/ci.yml)
+[![GitHub Actions CI Status](https://github.com/Castaglia/proftpd-mod_sftp_openssh/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Castaglia/proftpd-mod_sftp_openssh/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-GPL-brightgreen.svg)](https://img.shields.io/badge/license-GPL-brightgreen.svg)
 
 Synopsis
