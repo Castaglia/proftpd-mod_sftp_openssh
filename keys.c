@@ -26,12 +26,14 @@
 
 #define SFTP_OPENSSH_BUFSZ	1024
 
+static const char *trace_channel = "sftp.openssh";
+
 static int is_supported_key_type(const char *key_desc) {
   int supported = FALSE;
 
   if (strcmp(key_desc, "ssh-rsa") == 0 ||
 #if !defined(OPENSSL_NO_DSA)
-      strcmp(key_desc, "ssh-dss") == 0) {
+      strcmp(key_desc, "ssh-dss") == 0 ||
 #endif /* !OPENSSL_NO_DSA */
 #if defined(PR_USE_OPENSSL_ECC)
       strcmp(key_desc, "ecdsa-sha2-nistp256") == 0 ||
@@ -149,7 +151,7 @@ static int parse_key_data(pool *p, const char *text, size_t text_len,
 
   bio = BIO_new(BIO_s_mem());
 
-  if (BIO_write(bio, (void *) *text, text_len) < 0) {
+  if (BIO_write(bio, (void *) text, text_len) < 0) {
     (void) pr_log_writefile(sftp_logfd, MOD_SFTP_OPENSSH_VERSION,
       "error buffering base64 data: %s", sftp_crypto_get_errors());
   }
@@ -260,7 +262,6 @@ int sftp_openssh_keys_parse(pool *p, const char *line, size_t linelen,
   }
 
   if (*ptr == '\0') {
-    pr_trace_msg(trace_channel, 
     errno = EINVAL;
     return -1;
   }

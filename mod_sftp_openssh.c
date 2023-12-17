@@ -67,13 +67,13 @@ static struct filestore_key *filestore_alloc_key(pool *p) {
 
 static struct filestore_key *filestore_get_key(sftp_keystore_t *store,
     pool *p) {
+  int res;
   char *line = NULL;
   size_t linelen = 0;
   struct filestore_key *key = NULL;
   struct filestore_data *store_data = store->keystore_data;
   unsigned char *key_data = NULL;
   uint32_t key_datalen = 0;
-  pr_table_t *headers = NULL;
   const char *comment = NULL;
 
   while (getline(&line, &linelen, store_data->fp) != -1) {
@@ -144,7 +144,7 @@ static int openssh_verify_user_key(sftp_keystore_t *store, pool *p,
     pr_signals_handle();
     count++;
 
-    ok = sftp_keys_compare_keys(p, key_data, key_len, key->key_data,
+    ok = sftp_keys_compare_keys(p, key_data, key_datalen, key->key_data,
       key->key_datalen);
     if (ok != TRUE) {
       if (ok == -1) {
@@ -198,7 +198,7 @@ static int openssh_close(sftp_keystore_t *store) {
 
 static sftp_keystore_t *openssh_open(pool *parent_pool,
     int requested_key_type, const char *store_info, const char *user) {
-  int xernro;
+  int xerrno;
   sftp_keystore_t *store;
   pool *store_pool;
   struct filestore_data *store_data;
@@ -252,7 +252,7 @@ static sftp_keystore_t *openssh_open(pool *parent_pool,
   }
 
   memset(&st, 0, sizeof(st));
-  if (fstat(fp, &st) < 0) {
+  if (fstat(fileno(fp), &st) < 0) {
     xerrno = errno;
 
     destroy_pool(store_pool);
