@@ -28,25 +28,26 @@
 
 static const char *trace_channel = "sftp.openssh";
 
-static int is_supported_key_type(const char *key_desc) {
+static int is_supported_key_type(const char *key_desc, size_t key_desclen) {
   int supported = FALSE;
 
-  if (strcmp(key_desc, "ssh-rsa") == 0 ||
+  if (strncmp(key_desc, "ssh-rsa", key_desclen) == 0 ||
 #if !defined(OPENSSL_NO_DSA)
-      strcmp(key_desc, "ssh-dss") == 0 ||
+      strncmp(key_desc, "ssh-dss", key_desclen) == 0 ||
 #endif /* !OPENSSL_NO_DSA */
 #if defined(PR_USE_OPENSSL_ECC)
-      strcmp(key_desc, "ecdsa-sha2-nistp256") == 0 ||
-      strcmp(key_desc, "ecdsa-sha2-nistp384") == 0 ||
-      strcmp(key_desc, "ecdsa-sha2-nistp521") == 0 ||
+      strncmp(key_desc, "ecdsa-sha2-nistp256", key_desclen) == 0 ||
+      strncmp(key_desc, "ecdsa-sha2-nistp384", key_desclen) == 0 ||
+      strncmp(key_desc, "ecdsa-sha2-nistp521", key_desclen) == 0 ||
 # if PROFTPD_VERSION_NUMBER >= 0x0001030901
-      strcmp(key_desc, "sk-ecdsa-sha2-nistp256@openssh.com") == 0 ||
+      strncmp(key_desc, "sk-ecdsa-sha2-nistp256@openssh.com",
+        key_desclen) == 0 ||
 # endif /* Prior to ProFTPD 1.3.9rc1 */
 #endif /* PR_USE_OPENSSL_ECC */
 #if defined(PR_USE_SODIUM)
-      strcmp(key_desc, "ssh-ed25519") == 0 ||
+      strncmp(key_desc, "ssh-ed25519", key_desclen) == 0 ||
 # if PROFTPD_VERSION_NUMBER >= 0x0001030901
-      strcmp(key_desc, "sk-ssh-ed25519@openssh.com") == 0 ||
+      strncmp(key_desc, "sk-ssh-ed25519@openssh.com", key_desclen) == 0 ||
 # endif /* Prior to ProFTPD 1.3.9rc1 */
 #endif /* PR_USE_SODIUM */
       FALSE) {
@@ -237,16 +238,20 @@ int sftp_openssh_keys_parse(pool *p, const char *line, size_t linelen,
     return -1;
   }
 
+  pr_trace_msg(trace_channel, 22, "checking supported key type '%.*s'",
+    (int) len, ptr);
+
   /* field: options, or key type */
-  supported_key_type = is_supported_key_type(ptr);
+  supported_key_type = is_supported_key_type(ptr, len);
   if (supported_key_type == FALSE) {
     /* Assume we are dealing with key options; we'll parse these later. */
     key_opts = ptr;
 
     /* XXX Skip options */
+    /* XXX len = ... */
 
     /* field: key type */
-    supported_key_type = is_supported_key_type(ptr);
+    supported_key_type = is_supported_key_type(ptr, len);
     if (supported_key_type == FALSE) {
       len = strcspn(ptr, " \t");
       pr_trace_msg(trace_channel, 15,
@@ -257,8 +262,13 @@ int sftp_openssh_keys_parse(pool *p, const char *line, size_t linelen,
     }
   }
 
+  /* Advance past the key type. */
+  ptr += len;
+  linelen -= len;
+
   /* Skip whitespace. */
   for (; *ptr && PR_ISSPACE(*ptr); ptr++) {
+    linelen--;
   }
 
   if (*ptr == '\0') {
@@ -269,12 +279,18 @@ int sftp_openssh_keys_parse(pool *p, const char *line, size_t linelen,
   /* field: base64-encoded key data */
   len = strcspn(ptr, " \t");
 
+  pr_trace_msg(trace_channel, 22, "parsing key data '%.*s'", (int) len, ptr);
   if (parse_key_data(p, ptr, len, key_data, key_datalen) < 0) {
     return -1;
   }
 
+  /* Advance past the key data. */
+  ptr += len;
+  linelen -= len;
+
   /* Skip whitespace. */
   for (; *ptr && PR_ISSPACE(*ptr); ptr++) {
+    linelen--;
   }
 
   /* field: comment */
@@ -287,5 +303,7 @@ int sftp_openssh_keys_parse(pool *p, const char *line, size_t linelen,
     *comment = pstrdup(p, "");
   }
 
+  pr_trace_msg(trace_channel, 22,
+    "successfully parsed OpenSSH key (comment '%s')", *comment);
   return 0;
 }

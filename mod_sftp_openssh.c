@@ -54,7 +54,7 @@ struct filestore_data {
   unsigned int lineno;
 };
 
-static const char *trace_channel = "ssh2";
+static const char *trace_channel = "sftp.openssh";
 
 static struct filestore_key *filestore_alloc_key(pool *p) {
   struct filestore_key *key = NULL;
@@ -67,7 +67,7 @@ static struct filestore_key *filestore_alloc_key(pool *p) {
 
 static struct filestore_key *filestore_get_key(sftp_keystore_t *store,
     pool *p) {
-  int res;
+  int parsed_key = FALSE, res;
   char *line = NULL;
   size_t linelen = 0;
   struct filestore_key *key = NULL;
@@ -75,6 +75,8 @@ static struct filestore_key *filestore_get_key(sftp_keystore_t *store,
   unsigned char *key_data = NULL;
   uint32_t key_datalen = 0;
   const char *comment = NULL;
+
+  key = filestore_alloc_key(p);
 
   while (getline(&line, &linelen, store_data->fp) != -1) {
     char *ptr;
@@ -99,16 +101,22 @@ static struct filestore_key *filestore_get_key(sftp_keystore_t *store,
       &comment, key->headers);
     if (res < 0) {
       pr_trace_msg(trace_channel, 10,
-        "unable to parse data (line %u) as OpenSSH key", store_data->lineno);
+        "unable to parse data (line %u) as OpenSSH key: %s",
+        store_data->lineno, strerror(errno));
       free(line);
       continue;
     }
 
+    parsed_key = TRUE;
     free(line);
     break;
   }
 
-  key = filestore_alloc_key(p);
+  if (parsed_key == FALSE) {
+    errno = ENOENT;
+    return NULL;
+  }
+
   key->key_datalen = key_datalen;
   key->key_data = key_data;
   key->comment = comment;
@@ -236,6 +244,8 @@ static sftp_keystore_t *openssh_open(pool *parent_pool,
   }
 
   session.user = NULL;
+
+  pr_trace_msg(trace_channel, 17, "opening OpenSSH keystore file '%s'", path);
 
   PRIVS_ROOT
   fp = fopen(path, "r");
