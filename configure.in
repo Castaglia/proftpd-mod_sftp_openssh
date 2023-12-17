@@ -90,6 +90,5 @@ AC_SUBST(LIBDIRS)
 
 AC_CONFIG_HEADER(mod_sftp_openssh.h)
 AC_OUTPUT(
-  t/Makefile
   Makefile
 )

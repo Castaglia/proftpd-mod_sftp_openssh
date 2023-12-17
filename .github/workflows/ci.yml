@@ -61,9 +61,6 @@ jobs:
           # for builds
           apk add bash build-base clang compiler-rt gcc make zlib-dev
 
-          # for unit tests
-          apk add check check-dev subunit subunit-dev
-
           # for OpenSSL support
           apk add openssl openssl-dev
 
@@ -80,9 +77,6 @@ jobs:
           dnf config-manager --enable epel
           dnf config-manager --set-enabled powertools
 
-          # for unit tests
-          yum install -y check-devel https://cbs.centos.org/kojifiles/packages/subunit/1.4.0/1.el8/x86_64/subunit-1.4.0-1.el8.x86_64.rpm https://cbs.centos.org/kojifiles/packages/subunit/1.4.0/1.el8/x86_64/subunit-devel-1.4.0-1.el8.x86_64.rpm
-
           # for OpenSSL support
           yum install -y openssl openssl-devel
 
@@ -97,8 +91,6 @@ jobs:
           apt-get update -qq
           # for builds
           apt-get install -y clang gcc make
-          # for unit tests
-          apt-get install -y check libsubunit-dev
 
           # for OpenSSL support
           apt-get install -y libssl-dev
@@ -125,7 +117,7 @@ jobs:
           CC: ${{ matrix.compiler }}
         run: |
           cd proftpd
-          ./configure LIBS="-lm -lsubunit -lrt -pthread" --enable-devel=coverage --enable-tests --with-modules=mod_sftp:mod_sftp_openssh
+          ./configure LIBS="-lm -lrt -pthread" --with-modules=mod_sftp:mod_sftp_openssh
           make
 
       - name: Install as static modules
@@ -139,7 +131,7 @@ jobs:
         run: |
           cd proftpd
           make clean
-          ./configure LIBS="-lm -lsubunit -lrt -pthread" --enable-devel --enable-dso --with-shared=mod_sftp:mod_sftp_openssh
+          ./configure LIBS="-lm -lrt -pthread" --enable-devel --enable-dso --with-shared=mod_sftp:mod_sftp_openssh
           make
 
       - name: Install as shared modules
