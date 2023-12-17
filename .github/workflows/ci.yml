@@ -9,6 +9,7 @@ on:
       - main
   schedule:
     - cron: '11 1 * * 0'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -95,22 +96,12 @@ jobs:
           # for OpenSSL support
           apt-get install -y libssl-dev
 
-          # for integration/regression test
-          # for test code coverage
-          apt-get install -y lcov ruby
-          gem install coveralls-lcov
-
           # for HTML validation
           apt-get install -y tidy
           # for debugging
           clang --version
           gcc --version
           openssl version -a
-
-      - name: Prepare code coverage
-        if: ${{ matrix.container == 'ubuntu:20.04' }}
-        run: |
-          lcov --directory proftpd --zerocounters
 
       - name: Build as static module
         env:
