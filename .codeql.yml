@@ -1,3 +1,8 @@
 ---
 paths:
   - contrib/mod_sftp_openssh
+
+query-filter:
+  - exclude:
+      # See: https://codeql.github.com/codeql-query-help/cpp/cpp-user-controlled-bypass/
+      id: cpp/user-controlled-bypass

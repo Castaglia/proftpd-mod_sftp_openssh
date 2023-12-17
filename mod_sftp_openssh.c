@@ -226,16 +226,13 @@ static sftp_keystore_t *openssh_open(pool *parent_pool,
   session.user = (char *) user;
 
   memset(buf, '\0', sizeof(buf));
-  switch (pr_fs_interpolate(store_info, buf, sizeof(buf)-1)) {
-    case 1:
-      /* Interpolate occurred; make a copy of the interpolated path. */
-      path = pstrdup(store_pool, buf);
-      break;
+  if (pr_fs_interpolate(store_info, buf, sizeof(buf)-1) == 1) {
+    /* Interpolate occurred; make a copy of the interpolated path. */
+    path = pstrdup(store_pool, buf);
 
-    default:
-      /* Otherwise, use the path as is. */
-      path = pstrdup(store_pool, store_info);
-      break;
+  } else {
+    /* Otherwise, use the path as is. */
+    path = pstrdup(store_pool, store_info);
   }
 
   session.user = NULL;
