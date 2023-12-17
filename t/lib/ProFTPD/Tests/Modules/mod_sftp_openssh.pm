@@ -31,6 +31,16 @@ my $TESTS = {
     test_class => [qw(forking ssh2)],
   },
 
+  openssh_auth_publickey_bad_key_data => {
+    order => ++$order,
+    test_class => [qw(forking ssh2)],
+  },
+
+  openssh_auth_publickey_without_comment => {
+    order => ++$order,
+    test_class => [qw(forking ssh2)],
+  },
+
   openssh_auth_publickey_empty_file => {
     order => ++$order,
     test_class => [qw(forking ssh2)],
@@ -268,6 +278,209 @@ sub openssh_auth_publickey_unsupported_key_type {
       if ($ssh2->auth_publickey($setup->{user}, $rsa_pub_key,
           $rsa_priv_key)) {
         die("RSA publickey authentication succeeded unexpectedly");
+      }
+
+      $ssh2->disconnect();
+    };
+    if ($@) {
+      $ex = $@;
+    }
+
+    $wfh->print("done\n");
+    $wfh->flush();
+
+  } else {
+    eval { server_wait($setup->{config_file}, $rfh) };
+    if ($@) {
+      warn($@);
+      exit 1;
+    }
+
+    exit 0;
+  }
+
+  # Stop server
+  server_stop($setup->{pid_file});
+  $self->assert_child_ok($pid);
+
+  test_cleanup($setup->{log_file}, $ex);
+}
+
+sub openssh_auth_publickey_bad_key_data {
+  my $self = shift;
+  my $tmpdir = $self->{tmpdir};
+  my $setup = test_setup($tmpdir, 'sftp');
+
+  my $rsa_host_key = File::Spec->rel2abs('t/etc/modules/mod_sftp_openssh/ssh_host_rsa_key');
+
+  my $rsa_priv_key = File::Spec->rel2abs('t/etc/modules/mod_sftp_openssh/test_rsa_key');
+  my $rsa_pub_key = File::Spec->rel2abs('t/etc/modules/mod_sftp_openssh/test_rsa_key.pub');
+
+  my $test_pub_key = File::Spec->rel2abs('t/etc/modules/mod_sftp_openssh/test_bad_key.pub');
+
+  my $authorized_keys = File::Spec->rel2abs("$tmpdir/.authorized_keys");
+  unless (copy($test_pub_key, $authorized_keys)) {
+    die("Can't copy $test_pub_key to $authorized_keys: $!");
+  }
+
+  my $config = {
+    PidFile => $setup->{pid_file},
+    ScoreboardFile => $setup->{scoreboard_file},
+    SystemLog => $setup->{log_file},
+    TraceLog => $setup->{log_file},
+    Trace => 'sftp.openssh:30 ssh2:30',
+
+    AuthUserFile => $setup->{auth_user_file},
+    AuthGroupFile => $setup->{auth_group_file},
+    AuthOrder => 'mod_auth_file.c',
+
+    IfModules => {
+      'mod_delay.c' => {
+        DelayEngine => 'off',
+      },
+
+      'mod_sftp.c' => [
+        "SFTPEngine on",
+        "SFTPLog $setup->{log_file}",
+        "SFTPHostKey $rsa_host_key",
+        "SFTPAuthorizedUserKeys openssh:~/.authorized_keys",
+      ],
+    },
+  };
+
+  my ($port, $config_user, $config_group) = config_write($setup->{config_file},
+    $config);
+
+  # Open pipes, for use between the parent and child processes.  Specifically,
+  # the child will indicate when it's done with its test by writing a message
+  # to the parent.
+  my ($rfh, $wfh);
+  unless (pipe($rfh, $wfh)) {
+    die("Can't open pipe: $!");
+  }
+
+  require Net::SSH2;
+
+  my $ex;
+
+  # Fork child
+  $self->handle_sigchld();
+  defined(my $pid = fork()) or die("Can't fork: $!");
+  if ($pid) {
+    eval {
+      # Allow for server startup
+      sleep(2);
+
+      my $ssh2 = Net::SSH2->new();
+      unless ($ssh2->connect('127.0.0.1', $port)) {
+        my ($err_code, $err_name, $err_str) = $ssh2->error();
+        die("Can't connect to SSH2 server: [$err_name] ($err_code) $err_str");
+      }
+
+      if ($ssh2->auth_publickey($setup->{user}, $rsa_pub_key,
+          $rsa_priv_key)) {
+        die("RSA publickey authentication succeeded unexpectedly");
+      }
+
+      $ssh2->disconnect();
+    };
+    if ($@) {
+      $ex = $@;
+    }
+
+    $wfh->print("done\n");
+    $wfh->flush();
+
+  } else {
+    eval { server_wait($setup->{config_file}, $rfh) };
+    if ($@) {
+      warn($@);
+      exit 1;
+    }
+
+    exit 0;
+  }
+
+  # Stop server
+  server_stop($setup->{pid_file});
+  $self->assert_child_ok($pid);
+
+  test_cleanup($setup->{log_file}, $ex);
+}
+
+sub openssh_auth_publickey_without_comment {
+  my $self = shift;
+  my $tmpdir = $self->{tmpdir};
+  my $setup = test_setup($tmpdir, 'sftp');
+
+  my $rsa_host_key = File::Spec->rel2abs('t/etc/modules/mod_sftp_openssh/ssh_host_rsa_key');
+
+  my $rsa_priv_key = File::Spec->rel2abs('t/etc/modules/mod_sftp_openssh/test_rsa_key');
+  my $rsa_pub_key = File::Spec->rel2abs('t/etc/modules/mod_sftp_openssh/test_rsa_key_without_comment.pub');
+
+  my $authorized_keys = File::Spec->rel2abs("$tmpdir/.authorized_keys");
+  unless (copy($rsa_pub_key, $authorized_keys)) {
+    die("Can't copy $rsa_pub_key to $authorized_keys: $!");
+  }
+
+  my $config = {
+    PidFile => $setup->{pid_file},
+    ScoreboardFile => $setup->{scoreboard_file},
+    SystemLog => $setup->{log_file},
+    TraceLog => $setup->{log_file},
+    Trace => 'sftp.openssh:30 ssh2:30',
+
+    AuthUserFile => $setup->{auth_user_file},
+    AuthGroupFile => $setup->{auth_group_file},
+    AuthOrder => 'mod_auth_file.c',
+
+    IfModules => {
+      'mod_delay.c' => {
+        DelayEngine => 'off',
+      },
+
+      'mod_sftp.c' => [
+        "SFTPEngine on",
+        "SFTPLog $setup->{log_file}",
+        "SFTPHostKey $rsa_host_key",
+        "SFTPAuthorizedUserKeys openssh:~/.authorized_keys",
+      ],
+    },
+  };
+
+  my ($port, $config_user, $config_group) = config_write($setup->{config_file},
+    $config);
+
+  # Open pipes, for use between the parent and child processes.  Specifically,
+  # the child will indicate when it's done with its test by writing a message
+  # to the parent.
+  my ($rfh, $wfh);
+  unless (pipe($rfh, $wfh)) {
+    die("Can't open pipe: $!");
+  }
+
+  require Net::SSH2;
+
+  my $ex;
+
+  # Fork child
+  $self->handle_sigchld();
+  defined(my $pid = fork()) or die("Can't fork: $!");
+  if ($pid) {
+    eval {
+      # Allow for server startup
+      sleep(2);
+
+      my $ssh2 = Net::SSH2->new();
+      unless ($ssh2->connect('127.0.0.1', $port)) {
+        my ($err_code, $err_name, $err_str) = $ssh2->error();
+        die("Can't connect to SSH2 server: [$err_name] ($err_code) $err_str");
+      }
+
+      unless ($ssh2->auth_publickey($setup->{user}, $rsa_pub_key,
+          $rsa_priv_key)) {
+        my ($err_code, $err_name, $err_str) = $ssh2->error();
+        die("RSA publickey authentication failed: [$err_name] ($err_code) $err_str");
       }
 
       $ssh2->disconnect();

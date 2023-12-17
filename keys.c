@@ -210,7 +210,7 @@ static int parse_key_data(pool *p, const char *text, size_t text_len,
   } else {
     (void) pr_log_writefile(sftp_logfd, MOD_SFTP_OPENSSH_VERSION,
       "error base64-decoding key data from OpenSSH key");
-    errno = ENOENT;
+    errno = EINVAL;
     res = -1;
   }
 
