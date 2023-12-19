@@ -28,6 +28,73 @@
 
 static const char *trace_channel = "sftp.openssh";
 
+/* Return the index ("span") of the next character, assuming text that
+ * contains quoted sections.  Make sure we handle the case where the
+ * character of interest is not found in the given text, by returning -1
+ * in such cases.
+ */
+static int strnqspn(const char *text, size_t text_len, char c) {
+  int len = 0, quoted = FALSE;
+
+  for (; *text && (quoted || (*text != ' ' && *text != '\t')); text++) {
+    if (text[0] == '\\' &&
+        text[1] == '"') {
+      /* Skip past this escaped quote. */
+      text++;
+      len += 2;
+
+    } else {
+      if (text[0] == c &&
+          quoted == FALSE) {
+        return len;
+
+      } else if (text[0] == '"') {
+        quoted = !quoted;
+      }
+
+      len++;
+    }
+  }
+
+  /* If we reach here, we've reached the end of the text without finding
+   * any occurrences of the requested character.
+   */
+  errno = ENOENT;
+  return -1;
+}
+
+/* Get the span of an options field of text, which includes any quoted spaces.
+ * Returns the span length, or -1 on failure, such as for unterminated quotes.
+ */
+static int get_optspn(const char *text) {
+  int len = 0, quoted = FALSE;
+
+  for (; *text && (quoted || (*text != ' ' && *text != '\t')); text++) {
+    if (text[0] == '\\' &&
+        text[1] == '"') {
+      /* Skip past this escaped quote. */
+      text++;
+      len += 2;
+
+    } else {
+      if (text[0] == '"') {
+        quoted = !quoted;
+      }
+
+      len++;
+    }
+  }
+
+  if (*text == '\0' &&
+      quoted == TRUE) {
+    /* We reached the end of text, and we're still quoted. */
+    errno = EINVAL;
+    return -1;
+  }
+
+  return len;
+}
+
 static int is_supported_key_type(const char *key_desc, size_t key_desclen) {
   int supported = FALSE;
 
@@ -57,87 +124,85 @@ static int is_supported_key_type(const char *key_desc, size_t key_desclen) {
   return supported;
 }
 
-/* Return count of handled/parsed options. */
-static unsigned int parse_options(pool *p, const char *text,
-    pr_table_t *headers) {
-  const char *ptr;
-  unsigned int count = 0;
+struct key_opt {
+  const char *name;
+  const char *header_name;
+  const char *header_val;
+};
 
-  ptr = text;
-  while (*ptr &&
-         !PR_ISSPACE(*ptr)) {
-    const char *opt = NULL;
-    size_t opt_len = 0;
-
-    pr_signals_handle();
-
-    /* There are currently only a few OpenSSH options of interest to us. */
-
+static struct key_opt supported_opts[] = {
 #if PROFTPD_VERSION_NUMBER >= 0x0001030901
-    /* ProFTPD 1.3.9rc1 is when support for FIDO security keys first appeared.
-     */
-    opt = "touch-required";
-    opt_len = strlen(opt);
-    if (strncasecmp(ptr, opt, opt_len) == 0) {
-      count++;
+  /* ProFTPD 1.3.9rc1 is when support for FIDO security keys first appeared. */
 
-      if (pr_table_add_dup(headers, SFTP_KEYSTORE_HEADER_FIDO_TOUCH_REQUIRED,
-          "true", 0) < 0) {
-        pr_trace_msg(trace_channel, 19,
-          "error adding '%s' header from key: %s",
-           SFTP_KEYSTORE_HEADER_FIDO_TOUCH_REQUIRED, strerror(errno));
+  { "touch-required", SFTP_KEYSTORE_HEADER_FIDO_TOUCH_REQUIRED, "true" },
+  { "no-touch-required", SFTP_KEYSTORE_HEADER_FIDO_TOUCH_REQUIRED, "false" },
 
-      } else {
-        pr_trace_msg(trace_channel, 22, "added header: '%s: true' to notes",
-          SFTP_KEYSTORE_HEADER_FIDO_TOUCH_REQUIRED);
-      }
-
-      ptr += opt_len;
-
-      if (*ptr == ',') {
-        ptr++;
-      }
-    }
-
-    opt = "verify-required";
-    opt_len = strlen(opt);
-    if (strncasecmp(ptr, opt, opt_len) == 0) {
-      count++;
-
-      if (pr_table_add_dup(headers, SFTP_KEYSTORE_HEADER_FIDO_VERIFY_REQUIRED,
-          "true", 0) < 0) {
-        pr_trace_msg(trace_channel, 19,
-          "error adding '%s' header from key: %s",
-           SFTP_KEYSTORE_HEADER_FIDO_VERIFY_REQUIRED, strerror(errno));
-
-      } else {
-        pr_trace_msg(trace_channel, 22, "added header: '%s: true' to notes",
-          SFTP_KEYSTORE_HEADER_FIDO_VERIFY_REQUIRED);
-      }
-
-      ptr += opt_len;
-
-      if (*ptr == ',') {
-        ptr++;
-      }
-    }
+  { "verify-required", SFTP_KEYSTORE_HEADER_FIDO_VERIFY_REQUIRED, "true" },
+  { "no-verify-required", SFTP_KEYSTORE_HEADER_FIDO_VERIFY_REQUIRED, "false" },
 #endif /* Prior to ProFTPD 1.3.9rc1 */
 
-    if (*ptr == '\0' ||
-        PR_ISSPACE(*ptr)) {
-      /* End of options. */
-      break;
+  { NULL, NULL, NULL }
+};
+
+static int parse_key_option(pool *p, const char *text, size_t text_len,
+    pr_table_t *headers) {
+  register unsigned int i;
+  int res = -1;
+
+  for (i = 0; supported_opts[i].name != NULL; i++) {
+    size_t opt_len;
+
+    opt_len = strlen(supported_opts[i].name);
+    if (text_len < opt_len) {
+      continue;
     }
 
-    if (*ptr != ',') {
-      /* Unsupported option. */
-      ptr++;
+    if (strncasecmp(text, supported_opts[i].name, opt_len) == 0) {
+      if (pr_table_add_dup(headers, supported_opts[i].header_name,
+          supported_opts[i].header_val, 0) < 0) {
+        pr_trace_msg(trace_channel, 19,
+          "error adding '%s' header from key: %s",
+          supported_opts[i].header_name, strerror(errno));
+
+      } else {
+        pr_trace_msg(trace_channel, 22, "added header: '%s: %s' to notes",
+          supported_opts[i].header_name, supported_opts[i].header_val);
+      }
+
+      res = 0;
+    }
+  }
+
+  return res;
+}
+
+/* Return count of handled/parsed options. */
+static unsigned int parse_key_options(pool *p, const char *text,
+    size_t text_len, pr_table_t *headers) {
+  unsigned int count = 0;
+  int len;
+
+  len = strnqspn(text, text_len, ',');
+  while (len > 0) {
+    pr_signals_handle();
+
+    if (parse_key_option(p, text, len, headers) == 0) {
+      count++;
     }
 
-    if (*ptr == '\0') {
-      /* End of options. */
-      break;
-    }
+    text += len;
+    text_len -= len;
+
+    /* Skip the comma, too. */
+    text++;
+    text_len--;
+
+    len = strnqspn(text, text_len, ',');
+  }
+
+  /* Last option. */
+  if (parse_key_option(p, text, text_len, headers) == 0) {
+    count++;
   }
 
   return count;
@@ -225,7 +290,7 @@ int sftp_openssh_keys_parse(pool *p, const char *line, size_t linelen,
     const char **comment, pr_table_t *headers) {
   const char *key_opts = NULL, *ptr;
   int supported_key_type = FALSE;
-  size_t comment_len = 0, len;
+  size_t comment_len = 0, key_optslen = 0, len;
 
   ptr = line;
 
@@ -244,11 +309,43 @@ int sftp_openssh_keys_parse(pool *p, const char *line, size_t linelen,
   /* field: options, or key type */
   supported_key_type = is_supported_key_type(ptr, len);
   if (supported_key_type == FALSE) {
-    /* Assume we are dealing with key options; we'll parse these later. */
-    key_opts = ptr;
+    int res;
 
-    /* XXX Skip options */
-    /* XXX len = ... */
+    /* Assume we are dealing with key options; we'll parse these later.
+     * Since the option specifications can themselves have embedded, quoted
+     * spaces, we cannot use strcspn(3) directly here to determine the length
+     * of this options field.
+     */
+    res = get_optspn(ptr);
+    if (res < 0) {
+      errno = EINVAL;
+      return -1;
+    }
+
+    key_opts = ptr;
+    key_optslen = (size_t) res;
+
+    pr_trace_msg(trace_channel, 22, "skipping options '%.*s'",
+      (int) key_optslen, key_opts);
+
+    /* Advance past the options. */
+    ptr += key_optslen;
+    linelen -= key_optslen;
+
+    /* Skip whitespace. */
+    for (; *ptr && PR_ISSPACE(*ptr); ptr++) {
+      linelen--;
+    }
+
+    if (*ptr == '\0') {
+      errno = EINVAL;
+      return -1;
+    }
+
+    len = strcspn(ptr, " \t");
+
+    pr_trace_msg(trace_channel, 22, "checking supported key type '%.*s'",
+      (int) len, ptr);
 
     /* field: key type */
     supported_key_type = is_supported_key_type(ptr, len);
@@ -301,6 +398,18 @@ int sftp_openssh_keys_parse(pool *p, const char *line, size_t linelen,
 
   } else {
     *comment = pstrdup(p, "");
+  }
+
+  /* Now we check any options. */
+  if (key_opts != NULL &&
+      key_optslen > 0) {
+    unsigned int count;
+
+    pr_trace_msg(trace_channel, 22, "checking key options '%.*s'",
+      (int) key_optslen, key_opts);
+
+    count = parse_key_options(p, key_opts, key_optslen, headers);
+    pr_trace_msg(trace_channel, 22, "supported key options parsed: %u", count);
   }
 
   pr_trace_msg(trace_channel, 22,
