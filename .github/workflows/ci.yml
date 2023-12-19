@@ -5,11 +5,14 @@ on:
     branches:
       - main
     paths-ignore:
+      - '**/*.html'
       - '**/*.md'
   pull_request:
     branches:
       - main
     paths-ignore:
+      - '.codeql.yml'
+      - '**/*.html'
       - '**/*.md'
   schedule:
     - cron: '11 1 * * 0'

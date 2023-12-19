@@ -5,12 +5,14 @@ on:
     branches:
       - main
     paths-ignore:
+      - '**/*.html'
       - '**/*.md'
       - '**/doc/*'
   pull_request:
     branches:
       - main
     paths-ignore:
+      - '**/*.html'
       - '**/*.md'
       - '**/doc/*'
   schedule:
